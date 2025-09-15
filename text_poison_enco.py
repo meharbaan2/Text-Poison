@@ -4,15 +4,16 @@ from transformers import GPT2TokenizerFast, GPT2Model
 import torch
 import torch.nn.functional as F
 
-# --- COMMON LETTER XYZ REPLACEMENT ---
-def common_char_xyz_replacement(text, aggression=0.8):
-    """
-    Replace very common letters (e.g., e, t, a, o, i, n, s, h, r, d)
-    with x, y, or z to attack embeddings while remaining human-readable.
-    """
-    common_chars = 'etaoinshrd'  # top frequent English letters
+# --- AGGRESSION SETTINGS (tweak these) ---
+AGG_COMMON_CHAR = 0.4        # Aggression for common letter replacement
+AGG_SEMANTIC = 0.6           # Aggression for semantic disruption
+AGG_BOUNDARY = 0.5           # Aggression for token boundary attack
+AGG_COMBINED = 0.7           # Overall combined aggression
+
+# --- COMMON LETTER X REPLACEMENT ---
+def common_char_xyz_replacement(text, aggression=AGG_COMMON_CHAR):
+    common_chars = 'etaoinshrd'
     replacements = ['x']
-    
     result = []
     for char in text:
         if char.lower() in common_chars and random.random() < aggression:
@@ -23,7 +24,7 @@ def common_char_xyz_replacement(text, aggression=0.8):
     return ''.join(result)
 
 # --- SEMANTIC DISRUPTION APPROACH ---
-def poison_semantic_disruption(text, aggression=0.8):
+def poison_semantic_disruption(text, aggression=AGG_SEMANTIC):
     semantic_disruptions = {
         'Python': ['Pythön', 'Pyton', 'Pythôn', 'Pyth0n', 'Pythοn'],
         'is': ['ís', 'ïѕ', 'іѕ', 'iѕ', 'іs'],
@@ -37,8 +38,8 @@ def poison_semantic_disruption(text, aggression=0.8):
         lambda s: s.replace('ing', 'inɡ').replace('ed', 'еd'),
         lambda s: s.replace('th', 'tһ').replace('sh', 'ѕh'),
         lambda s: s.replace('oo', 'οο').replace('ee', 'ее'),
-        lambda s: s + '\u200B\u200C\u200D',  # invisible suffix
-        lambda s: '\u2060\u2062\u2063' + s,  # invisible prefix
+        lambda s: s + '\u200B\u200C\u200D',
+        lambda s: '\u2060\u2062\u2063' + s,
     ]
     
     words = text.split()
@@ -62,7 +63,7 @@ def poison_semantic_disruption(text, aggression=0.8):
     return poisoned_text
 
 # --- TOKEN BOUNDARY ATTACK ---
-def poison_token_boundaries(text, aggression=0.8):
+def poison_token_boundaries(text, aggression=AGG_BOUNDARY):
     space_replacements = [
         ' \u200B\u200C\u200D ', ' \u2060\u2062\u2063 ',
         ' \u200B\u2060 ', ' \u200C\u2062 ', ' \u200D\u2063 ',
@@ -85,10 +86,10 @@ def poison_token_boundaries(text, aggression=0.8):
     return text
 
 # --- COMBINED POISONING ---
-def combined_poison(text, aggression=0.8):
-    poisoned = poison_semantic_disruption(text, aggression)
-    poisoned = poison_token_boundaries(poisoned, aggression)
-    poisoned = common_char_xyz_replacement(poisoned, aggression)
+def combined_poison(text, aggression=AGG_COMBINED):
+    poisoned = poison_semantic_disruption(text, AGG_SEMANTIC)
+    poisoned = poison_token_boundaries(poisoned, AGG_BOUNDARY)
+    poisoned = common_char_xyz_replacement(poisoned, AGG_COMMON_CHAR)
     return poisoned
 
 # --- EMBEDDING & SIMILARITY ---
@@ -102,7 +103,7 @@ def get_embedding(text, tokenizer, model):
 def cosine_sim(a, b):
     return F.cosine_similarity(a, b, dim=0).item()
 
-# --- FIND EFFECTIVE POISON ---
+# --- FIND EFFECTIVE POISON WITH DYNAMIC LOGGING ---
 def find_effective_poison(text, tokenizer, model, target=0.8, attempts=100):
     clean_emb = get_embedding(text, tokenizer, model)
     best_sim = 1.0
@@ -110,8 +111,11 @@ def find_effective_poison(text, tokenizer, model, target=0.8, attempts=100):
     
     print("Searching for effective poison...")
     
+    log_attempts = [0, 1, 2, 3]
+    next_log = 6
+    
     for attempt in range(attempts):
-        poisoned = combined_poison(text, aggression=0.8)
+        poisoned = combined_poison(text)
         try:
             emb_poison = get_embedding(poisoned, tokenizer, model)
             sim = cosine_sim(clean_emb, emb_poison)
@@ -119,7 +123,12 @@ def find_effective_poison(text, tokenizer, model, target=0.8, attempts=100):
             if sim < best_sim:
                 best_sim = sim
                 best_poison = poisoned
+            
+            # Dynamic logging
+            if attempt in log_attempts or attempt >= next_log:
                 print(f"Attempt {attempt}: similarity={sim:.4f}")
+                if attempt >= next_log:
+                    next_log = int(next_log * 1.5)
             
             if sim <= target:
                 break
@@ -140,12 +149,12 @@ def demo_final(text, target=0.8):
     print(text)
     print("\n--- POISONED TEXT ---")
     print(poisoned)
-    print(f"\nBest similarity achieved: {sim:.6f} (target ~{target})")
+    print(f"\nLowest similarity achieved (best poison): {sim:.6f} (target ~{target})")
 
 # --- ENTRY POINT ---
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--text", "-t", type=str, default="Python is a popular programming language.")
+    parser.add_argument("--text", "-t", type=str, default="A gentle breeze rustled the leaves while the birds sang in harmony")
     parser.add_argument("--target", type=float, default=0.8)
     args = parser.parse_args()
 
