@@ -8,7 +8,7 @@ import torch.nn.functional as F
 def common_char_xyz_replacement(text, aggression=0.8):
     """
     Replace very common letters (e.g., e, t, a, o, i, n, s, h, r, d)
-    with x, y, or z to attack embeddings while remaining human-readable.
+    with x to attack embeddings while remaining human-readable.
     """
     common_chars = 'etaoinshrd'  # top frequent English letters
     replacements = ['x']
