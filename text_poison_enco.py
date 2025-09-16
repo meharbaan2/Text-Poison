@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 # --- AGGRESSION SETTINGS (tweak these) ---
 AGG_COMMON_CHAR = 0.4        # Aggression for common letter replacement
-AGG_SEMANTIC = 0.6           # Aggression for semantic disruption
+AGG_HOMOGLYPH = 0.5          # Aggression for homoglyph substitution
 AGG_BOUNDARY = 0.5           # Aggression for token boundary attack
 AGG_COMBINED = 0.7           # Overall combined aggression
 
@@ -23,44 +23,31 @@ def common_char_xyz_replacement(text, aggression=AGG_COMMON_CHAR):
             result.append(char)
     return ''.join(result)
 
-# --- SEMANTIC DISRUPTION APPROACH ---
-def poison_semantic_disruption(text, aggression=AGG_SEMANTIC):
-    semantic_disruptions = {
-        'Python': ['Pythön', 'Pyton', 'Pythôn', 'Pyth0n', 'Pythοn'],
-        'is': ['ís', 'ïѕ', 'іѕ', 'iѕ', 'іs'],
-        'a': ['á', 'а', 'ɑ', 'а́'],
-        'popular': ['populаr', 'pοpular', 'populâr', 'p0pular'],
-        'programming': ['progrаmming', 'programming', 'progrаmming', 'prοgramming'],
-        'language': ['lаnguage', 'languаge', 'langυage', 'lаnguage'],
+# --- HOMOGLYPH POISONING ---
+def homoglyph_poison(text, aggression=AGG_HOMOGLYPH):
+    homoglyphs = {
+        "a": ["а", "ɑ", "α", "á", "à"],      # Cyrillic a, Latin alpha, etc.
+        "e": ["е", "℮", "є", "ë", "ε"],
+        "i": ["і", "í", "ì", "ï", "ɩ"],
+        "o": ["ο", "о", "0", "ö", "ò"],
+        "u": ["υ", "ս", "ü", "ù", "û"],
+        "c": ["с", "ϲ", "ċ", "ç"],
+        "p": ["р", "ρ", "ṕ"],
+        "y": ["у", "ү", "ý"],
+        "h": ["һ", "հ", "ḥ"],
+        "n": ["ո", "ṅ", "ñ"],
+        "s": ["ѕ", "ṡ", "ş"],
+        "r": ["ᴦ", "г", "ŕ"],
+        "t": ["τ", "ţ", "ṭ"],
     }
-    
-    disruptive_transforms = [
-        lambda s: s.replace('ing', 'inɡ').replace('ed', 'еd'),
-        lambda s: s.replace('th', 'tһ').replace('sh', 'ѕh'),
-        lambda s: s.replace('oo', 'οο').replace('ee', 'ее'),
-        lambda s: s + '\u200B\u200C\u200D',
-        lambda s: '\u2060\u2062\u2063' + s,
-    ]
-    
-    words = text.split()
-    disrupted_words = []
-    for word in words:
-        clean_word = word.strip('.,!?;:')
-        punctuation = word[len(clean_word):] if word != clean_word else ''
-        
-        if clean_word in semantic_disruptions and random.random() < aggression:
-            replacement = random.choice(semantic_disruptions[clean_word])
-            disrupted_words.append(replacement + punctuation)
+    result = []
+    for char in text:
+        if char.lower() in homoglyphs and random.random() < aggression:
+            repl = random.choice(homoglyphs[char.lower()])
+            result.append(repl.upper() if char.isupper() else repl)
         else:
-            disrupted_words.append(word)
-    
-    poisoned_text = " ".join(disrupted_words)
-    
-    for transform in disruptive_transforms:
-        if random.random() < aggression:
-            poisoned_text = transform(poisoned_text)
-    
-    return poisoned_text
+            result.append(char)
+    return ''.join(result)
 
 # --- TOKEN BOUNDARY ATTACK ---
 def poison_token_boundaries(text, aggression=AGG_BOUNDARY):
@@ -85,11 +72,11 @@ def poison_token_boundaries(text, aggression=AGG_BOUNDARY):
     
     return text
 
-# --- COMBINED POISONING ---
+# --- COMBINED POISONING (order matters!) ---
 def combined_poison(text, aggression=AGG_COMBINED):
-    poisoned = poison_semantic_disruption(text, AGG_SEMANTIC)
-    poisoned = poison_token_boundaries(poisoned, AGG_BOUNDARY)
-    poisoned = common_char_xyz_replacement(poisoned, AGG_COMMON_CHAR)
+    poisoned = common_char_xyz_replacement(text, AGG_COMMON_CHAR)     # step 1: x replacement
+    poisoned = homoglyph_poison(poisoned, AGG_HOMOGLYPH)              # step 2: homoglyphs
+    poisoned = poison_token_boundaries(poisoned, AGG_BOUNDARY)        # step 3: invisibles
     return poisoned
 
 # --- EMBEDDING & SIMILARITY ---
@@ -154,7 +141,7 @@ def demo_final(text, target=0.8):
 # --- ENTRY POINT ---
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--text", "-t", type=str, default="A gentle breeze rustled the leaves while the birds sang in harmony")
+    parser.add_argument("--text", "-t", type=str, default="She poured herself a cup of coffee and opened the morning paper.")
     parser.add_argument("--target", type=float, default=0.8)
     args = parser.parse_args()
 
