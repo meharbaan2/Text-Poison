@@ -1,7 +1,7 @@
 # GPT-2 Text Poisoning Experiment
 
 A fun experiment exploring text **“poisoning”** for GPT-2 embeddings.  
-This project applies small semantic changes, token-boundary manipulations, invisible characters, and homoglyph substitutions to see how robust GPT-2 embeddings really are.
+This project applies small semantic changes, token-boundary manipulations, invisible characters, and homoglyph substitutions to see how robust GPT-2 embeddings really are. All while keeping human readability.
 
 ---
 
